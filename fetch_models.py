@@ -64,12 +64,13 @@ class OpenAIModelFetch(ModelFetchStrategy):
             return None
 
         try:
-            client = api_obj.Client(api_key=key)
+            client = api_obj.OpenAI(api_key=key)  # <-- fixed this line
             models = client.models.list()
             return ModelsContainer([model.id for model in models.data if "gpt" in model.id.lower()])
         except Exception as e:
             logging.error(f"OpenAI Key is invalid or missing, unable to generate list of models. Error: {e}")
             return None
+
 
 class AnthropicModelFetch(ModelFetchStrategy):
     def fetch_models(self, key: str, api_obj, **kwargs):

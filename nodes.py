@@ -9,6 +9,13 @@ from .fetch_models import LLMService, get_available_models, validate_model
 import hashlib
 from functools import lru_cache
 
+# Utility functions for image conversion
+def tensor2pil(image):
+    return Image.fromarray(np.clip(255. * image.cpu().numpy().squeeze(), 0, 255).astype(np.uint8))
+
+def pil2tensor(image):
+    return torch.from_numpy(np.array(image).astype(np.float32) / 255.0).unsqueeze(0)
+
 class MinxMergeNode:
     def __init__(self):
         self.last_seed = None
@@ -17,32 +24,17 @@ class MinxMergeNode:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "art_style": ("STRING", {"default": "", "multiline": True}),
-                "image1": ("IMAGE",),
-                "image2": ("IMAGE",),
+                "image": ("IMAGE",),
                 "llm_service": ([LLMService.OPENAI.value, LLMService.ANTHROPIC.value], {"default": LLMService.OPENAI.value}),
                 "max_tokens": ("INT", {"default": 100, "min": 1, "max": 4096}),
-                "system_prompt": ("STRING", {
-                    "default": """Create imaginative prompts by integrating elements from two images into one cohesive and fully integrated scene. Ensure the description is concise, clear, and reflects the seamless fusion of both images. Users will specify an art style, and should be shortened to include the most important art style traits. The description of the images should avoid terms like 'blend' or 'merge,' and be capped at 120 words.
-
-# Steps
-
-1. Seamlessly integrate elements from both images into a single imaginative scene.
-2. Avoid using terms related to merging or blending to describe the scene.
-3. Ensure the final description is creative, coherent, and comprehensible within the 100 word limit.
-
-# Output Format
-
-- Begin with the user supplied art style.
-- Follow with a unified scene description that reflects the integration of elements from both images.
-- The entire output must be no longer than 120 words.""",
-                    "multiline": True
-                }),
                 "openai_model": (get_available_models(LLMService.OPENAI), {"default": "none"}),
                 "anthropic_model": (get_available_models(LLMService.ANTHROPIC), {"default": "none"}),
                 "temperature": ("FLOAT", {"default": 0.7, "min": 0.0, "max": 1.0, "step": 0.1}),
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
                 "debug_mode": ("BOOLEAN", {"default": False}),
+                "instruction": ("STRING", {"default": "", "multiline": True, "forceInput": True}),
+                "example": ("STRING", {"default": "", "multiline": True, "forceInput": True}),
+                "prompt": ("STRING", {"default": "", "multiline": True, "forceInput": True}),
             }
         }
 
@@ -51,10 +43,10 @@ class MinxMergeNode:
     FUNCTION = "generate_prompt"
     CATEGORY = "Minx Merge"
 
-    def generate_prompt(self, art_style: str, image1: torch.Tensor, image2: torch.Tensor, 
-                        llm_service: str, max_tokens: int, system_prompt: str, 
-                        openai_model: str, anthropic_model: str, 
-                        temperature: float, seed: int, debug_mode: bool) -> tuple:
+    def generate_prompt(self, image: torch.Tensor, llm_service: str, max_tokens: int,
+                        openai_model: str, anthropic_model: str,
+                        temperature: float, seed: int, debug_mode: bool,
+                        instruction: str, example: str, prompt: str) -> tuple:
         import logging
         logging.basicConfig(level=logging.DEBUG if debug_mode else logging.INFO)
         logger = logging.getLogger(__name__)
@@ -62,12 +54,12 @@ class MinxMergeNode:
         try:
             logger.debug(f"Starting prompt generation with {llm_service} service")
             service = LLMService(llm_service)
-            
+
             # Handle seed
             if self.last_seed is not None:
                 seed = self.last_seed + 1
             self.last_seed = seed
-            
+
             # Set the seed
             torch.manual_seed(seed)
 
@@ -87,34 +79,39 @@ class MinxMergeNode:
             # Get API key from environment
             api_key = self._get_api_key(service)
             logger.debug(f"API key retrieved for {service.value}")
-            
+
             # Validate API key
             self._validate_api_key(api_key, service)
-            
+
             # Validate model
             if not validate_model(service, model):
                 raise ValueError(f"Invalid model {model} for service {service.value}")
-            
-            # Validate input parameters
-            self._validate_input(art_style, max_tokens)
-            
-            # Process images
-            logger.debug("Processing images")
-            image1_data = self._process_image(image1)
-            image2_data = self._process_image(image2)
-            
-            # Generate user prompt
-            user_prompt = f"Art style: {self._truncate_art_style(art_style)}"
+
+            # Process image
+            logger.debug("Processing image")
+            image_data = self._process_image(image)
+
+            # Build the user prompt from instruction, example, and prompt
+            user_prompt = ""
+            if instruction:
+                user_prompt += f"Instruction: {instruction}\n"
+            if example:
+                user_prompt += f"Example: {example}\n"
+            if prompt:
+                user_prompt += f"Prompt: {prompt}"
+
             logger.debug("User prompt generated")
-            
+
             # Log the size of the user prompt
             prompt_size = len(user_prompt.encode('utf-8'))
             logger.debug(f"User prompt size: {prompt_size} bytes")
-            
+
             # Call appropriate LLM API with retry mechanism
             logger.debug(f"Calling {service.value} API")
-            result = self._call_api_with_retry(service, api_key, model, system_prompt, user_prompt, image1_data, image2_data, max_tokens, temperature)
-            
+            result = self._call_api_with_retry(
+                service, api_key, model, user_prompt, image_data, max_tokens, temperature
+            )
+
             logger.info(f"Generated prompt: {result}")
             return (result, seed)
         except Exception as e:
@@ -122,44 +119,47 @@ class MinxMergeNode:
             logger.error(error_message)
             return (error_message, seed)
 
-    def _validate_input(self, art_style: str, max_tokens: int) -> None:
-        """Validate the input parameters."""
-        if not art_style.strip():
-            raise ValueError("Art style cannot be empty")
-        if max_tokens < 1 or max_tokens > 4096:
-            raise ValueError("max_tokens must be between 1 and 4096")
-
-    def _validate_api_key(self, api_key: str, service: LLMService) -> None:
-        """Validate the API key for the given service."""
-        if not api_key:
-            raise ValueError(f"API key for {service.value} is missing or invalid")
-        # Add more specific validation logic for each service if needed
-
-    def _generate_cache_key(self, service: LLMService, model: str, system_prompt: str, user_prompt: str, max_tokens: int, temperature: float, seed: int, image1_data: str, image2_data: str) -> str:
-        """Generate a unique cache key for the given inputs."""
-        key_string = f"{service.value}:{model}:{system_prompt}:{user_prompt}:{max_tokens}:{temperature}:{seed}:{image1_data}:{image2_data}"
-        return hashlib.md5(key_string.encode()).hexdigest()
-
-    def _call_api_with_retry(self, service: LLMService, api_key: str, model: str, system_prompt: str, user_prompt: str, image1_data: str, image2_data: str, max_tokens: int, temperature: float, max_retries: int = 3) -> str:
-        """Call the API with retry mechanism."""
-        import time
-        for attempt in range(max_retries):
-            try:
-                if service == LLMService.OPENAI:
-                    return self._call_openai(api_key, model, system_prompt, user_prompt, image1_data, image2_data, max_tokens, temperature)
-                elif service == LLMService.ANTHROPIC:
-                    return self._call_anthropic(api_key, model, system_prompt, user_prompt, image1_data, image2_data, max_tokens, temperature)
-            except Exception as e:
-                if attempt == max_retries - 1:
-                    raise
-                time.sleep(2 ** attempt)  # Exponential backoff
-        raise RuntimeError("Max retries reached")
+    def _call_anthropic(self, api_key: str, model: str, user_prompt: str, image_data: str, max_tokens: int, temperature: float) -> str:
+        from anthropic import Anthropic
+        client = Anthropic(api_key=api_key)
+        try:
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": user_prompt},
+                        {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": image_data.split(",")[1]}},
+                    ],
+                }
+            ]
+            response = client.messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                messages=messages,
+            )
+            return response.content[0].text.strip()
+        except Exception as e:
+            if "too many total text bytes" in str(e):
+                raise RuntimeError(f"Anthropic API request too large. Please reduce input size.")
+            else:
+                raise RuntimeError(f"Anthropic API error: {str(e)}")
 
     def _get_api_key(self, service: LLMService) -> str:
         key = os.getenv(f"{service.value.upper()}_API_KEY")
         if not key:
             raise ValueError(f"Please set {service.value.upper()}_API_KEY environment variable")
         return key
+
+    def _validate_api_key(self, api_key: str, service: LLMService) -> None:
+        if not api_key:
+            raise ValueError(f"API key for {service.value} is missing or invalid")
+
+    def _validate_input(self, art_style: str, max_tokens: int) -> None:
+        if not art_style.strip():
+            raise ValueError("Art style cannot be empty")
+        if max_tokens < 1 or max_tokens > 4096:
+            raise ValueError("max_tokens must be between 1 and 4096")
 
     def _process_image(self, image: torch.Tensor, max_size: int = 512) -> str:
         import base64
@@ -185,23 +185,30 @@ class MinxMergeNode:
             return art_style
         return art_style[:max_length] + "..."
 
-    def _check_request_size(self, prompt: str, max_size: int = 4000000) -> bool:
-        """Check if the request size is within the allowed limit."""
-        return len(prompt.encode('utf-8')) <= max_size
+    def _call_api_with_retry(self, service: LLMService, api_key: str, model: str, user_prompt: str, image_data: str, max_tokens: int, temperature: float, max_retries: int = 3) -> str:
+        import time
+        for attempt in range(max_retries):
+            try:
+                if service == LLMService.OPENAI:
+                    return self._call_openai(api_key, model, user_prompt, image_data, max_tokens, temperature)
+                elif service == LLMService.ANTHROPIC:
+                    return self._call_anthropic(api_key, model, user_prompt, image_data, max_tokens, temperature)
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    raise
+                time.sleep(2 ** attempt)  # Exponential backoff
+        raise RuntimeError("Max retries reached")
 
-    def _call_openai(self, api_key: str, model: str, system_prompt: str, user_prompt: str, image1: str, image2: str, max_tokens: int, temperature: float) -> str:
+    def _call_openai(self, api_key: str, model: str, user_prompt: str, image_data: str, max_tokens: int, temperature: float) -> str:
         from openai import OpenAI
         client = OpenAI(api_key=api_key)
         try:
             messages = [
-                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": [
                     {"type": "text", "text": user_prompt},
-                    {"type": "image_url", "image_url": {"url": image1}},
-                    {"type": "image_url", "image_url": {"url": image2}}
+                    {"type": "image_url", "image_url": {"url": image_data}}
                 ]}
             ]
-            
             response = client.chat.completions.create(
                 model=model,
                 messages=messages,
@@ -214,37 +221,72 @@ class MinxMergeNode:
                 raise RuntimeError(f"OpenAI API rate limit exceeded. Please try again later.")
             raise RuntimeError(f"OpenAI API error: {str(e)}")
 
-    def _call_anthropic(self, api_key: str, model: str, system_prompt: str, user_prompt: str, image1: str, image2: str, max_tokens: int, temperature: float) -> str:
-        from anthropic import Anthropic
-        client = Anthropic(api_key=api_key)
-        try:
-            messages = [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": f"{system_prompt}\n\nUser: {user_prompt}\n\nAssistant: Here's a description based on the two images and the specified art style:"},
-                        {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": image1.split(",")[1]}},
-                        {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": image2.split(",")[1]}},
-                    ],
-                }
-            ]
-            
-            response = client.messages.create(
-                model=model,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                messages=messages,
-            )
-            return response.content[0].text.strip()
-        except Exception as e:
-            if "too many total text bytes" in str(e):
-                raise RuntimeError(f"Anthropic API request too large. Please reduce input size.")
-            raise RuntimeError(f"Anthropic API error: {str(e)}")
+class ImageRotateNode:
+    def __init__(self):
+        pass
 
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "images": ("IMAGE",),
+                "mode": (["transpose", "internal"],),
+                "rotation": ("INT", {"default": 0, "min": 0, "max": 360, "step": 90}),
+                "sampler": (["nearest", "bilinear", "bicubic"],),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("images",)
+    FUNCTION = "image_rotate"
+    CATEGORY = "Minx Merge/Image/Transform"
+
+    def image_rotate(self, images, mode, rotation, sampler):
+        batch_tensor = []
+        for image in images:
+            # Convert to PIL Image
+            image = tensor2pil(image)
+
+            # Check rotation
+            if rotation > 360:
+                rotation = int(360)
+            if (rotation % 90 != 0):
+                rotation = int((rotation//90)*90)
+
+            # Set Sampler
+            if sampler:
+                if sampler == 'nearest':
+                    resampling = Image.NEAREST
+                elif sampler == 'bicubic':
+                    resampling = Image.BICUBIC
+                elif sampler == 'bilinear':
+                    resampling = Image.BILINEAR
+                else:
+                    resampling = Image.BILINEAR
+
+            # Rotate Image
+            if mode == 'internal':
+                image = image.rotate(rotation, resampling)
+            else:
+                rot = int(rotation / 90)
+                for _ in range(rot):
+                    # Image.ROTATE_90 = 2 (transpose method constant for 90-degree rotation)
+                    image = image.transpose(2)
+
+            batch_tensor.append(pil2tensor(image))
+
+        batch_tensor = torch.cat(batch_tensor, dim=0)
+
+        return (batch_tensor, )
+
+# Node class mappings
 NODE_CLASS_MAPPINGS = {
     "MinxMergeNode": MinxMergeNode,
+    "ImageRotateNode": ImageRotateNode
 }
 
+# Node display name mappings
 NODE_DISPLAY_NAME_MAPPINGS = {
     "MinxMergeNode": "Minx Merge",
+    "ImageRotateNode": "Image Rotate"
 }
