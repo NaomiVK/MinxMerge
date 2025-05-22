@@ -10,6 +10,8 @@ Comfy Minx Merge is a custom node pack for ComfyUI that integrates multiple Lang
 - Flexible input options with adjustable temperature and max tokens
 - Exponential backoff retry mechanism for API failures
 - Image Rotate node: Rotate images with various methods and sampling options
+- Chromatic Aberration node: Create RGB channel offset effects
+- Film Grain node: Add realistic film grain to images
 
 ## Installation
 
@@ -67,6 +69,29 @@ If you encounter any issues related to API compatibility, please ensure you have
 5. Select resampling method (nearest, bilinear, or bicubic)
 6. The output is the rotated image
 
+### Chromatic Aberration Node
+
+1. Find the "Chromatic Aberration" node in the "Minx Merge/Image/Filter" category.
+2. Connect an image input to the node.
+3. Adjust the RGB channel offset parameters:
+   - `red_offset`: Horizontal offset for the red channel (positive = right, negative = left)
+   - `green_offset`: Vertical offset for the green channel (positive = down, negative = up)
+   - `blue_offset`: Vertical offset for the blue channel (positive = down, negative = up)
+4. Set the `intensity` parameter to control the strength of the effect (0.0-1.0)
+5. Adjust the `fade_radius` to control how the effect fades toward the edges of the image
+6. The output is the image with chromatic aberration applied
+
+### Film Grain Node
+
+1. Find the "Film Grain" node in the "Minx Merge/Image/Filter" category.
+2. Connect an image input to the node.
+3. Adjust the grain parameters:
+   - `density`: Controls how many noise pixels are added (0.01-1.0)
+   - `intensity`: Controls the strength of the grain effect (0.01-1.0)
+   - `highlights`: Adjusts the brightness of the final image (0.01-255.0)
+   - `supersample_factor`: Controls the resolution at which the grain is generated (higher values = finer grain)
+4. The output is the image with film grain applied
+
 ## Customization
 
 The Minx Merge node allows for extensive customization through three key text input fields:
@@ -108,6 +133,24 @@ Select from vision-capable models like:
 - claude-3-haiku-20240307
 
 Each LLM service has its own model selection dropdown. These dropdowns are always visible, but you should only select a model for the service you're currently using. Select "none" for the service you're not using.
+
+## Image Filter Effects
+
+The image filter nodes provide several ways to add interesting visual effects to your images:
+
+### Chromatic Aberration Effects
+- Create subtle RGB channel shifts for a vintage camera look
+- Simulate lens distortion and color fringing
+- Create sci-fi glitch aesthetics
+- Add psychedelic color effects
+- Highlight edges with colorful halos
+
+### Film Grain Effects
+- Add analog film texture to digital images
+- Create vintage or retro photo looks
+- Add atmospheric noise to flat images
+- Simulate high-ISO photography
+- Create artistic texture effects
 
 ## Troubleshooting
 

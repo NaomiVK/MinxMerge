@@ -2,7 +2,8 @@ import os
 import comfy
 import torch
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageChops, ImageFilter, ImageEnhance, ImageOps, ImageDraw
+import random
 from typing import Dict, List, Optional
 from .fetch_models import LLMService, get_available_models, validate_model
 
@@ -279,14 +280,178 @@ class ImageRotateNode:
 
         return (batch_tensor, )
 
+class ChromaticAberrationNode:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "red_offset": ("INT", {"default": 2, "min": -255, "max": 255, "step": 1}),
+                "green_offset": ("INT", {"default": -1, "min": -255, "max": 255, "step": 1}),
+                "blue_offset": ("INT", {"default": 1, "min": -255, "max": 255, "step": 1}),
+                "intensity": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "fade_radius": ("INT", {"default": 12, "min": 0, "max": 1024, "step": 1}),
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "apply_chromatic_aberration"
+    CATEGORY = "Minx Merge/Image/Filter"
+
+    def apply_chromatic_aberration(self, image, red_offset=4, green_offset=2, blue_offset=0, intensity=1, fade_radius=12):
+        batch_tensor = []
+
+        for img in image:
+            img_pil = tensor2pil(img)
+            result = self._chromatic_aberration_effect(img_pil, red_offset, green_offset, blue_offset, intensity, fade_radius)
+            batch_tensor.append(pil2tensor(result))
+
+        return (torch.cat(batch_tensor, dim=0),)
+
+    def _chromatic_aberration_effect(self, img, r_offset, g_offset, b_offset, intensity, fade_radius):
+        def lingrad(size, direction, white_ratio):
+            image = Image.new('RGB', size)
+            draw = ImageDraw.Draw(image)
+            if direction == 'vertical':
+                black_end = size[1] - white_ratio
+                range_start = 0
+                range_end = size[1]
+                range_step = 1
+                for y in range(range_start, range_end, range_step):
+                    color_ratio = y / size[1]
+                    if y <= black_end:
+                        color = (0, 0, 0)
+                    else:
+                        color_value = int(((y - black_end) / (size[1] - black_end)) * 255)
+                        color = (color_value, color_value, color_value)
+                    draw.line([(0, y), (size[0], y)], fill=color)
+            elif direction == 'horizontal':
+                black_end = size[0] - white_ratio
+                range_start = 0
+                range_end = size[0]
+                range_step = 1
+                for x in range(range_start, range_end, range_step):
+                    color_ratio = x / size[0]
+                    if x <= black_end:
+                        color = (0, 0, 0)
+                    else:
+                        color_value = int(((x - black_end) / (size[0] - black_end)) * 255)
+                        color = (color_value, color_value, color_value)
+                    draw.line([(x, 0), (x, size[1])], fill=color)
+
+            return image.convert("L")
+
+        def create_fade_mask(size, fade_radius):
+            mask = Image.new("L", size, 255)
+
+            left = ImageOps.invert(lingrad(size, 'horizontal', int(fade_radius * 2)))
+            right = left.copy().transpose(Image.FLIP_LEFT_RIGHT)
+            top = ImageOps.invert(lingrad(size, 'vertical', int(fade_radius * 2)))
+            bottom = top.copy().transpose(Image.FLIP_TOP_BOTTOM)
+
+            # Multiply masks with the original mask image
+            mask = ImageChops.multiply(mask, left)
+            mask = ImageChops.multiply(mask, right)
+            mask = ImageChops.multiply(mask, top)
+            mask = ImageChops.multiply(mask, bottom)
+            mask = ImageChops.multiply(mask, mask)
+
+            return mask
+
+        # split the channels of the image
+        r, g, b = img.split()
+
+        # apply the offset to each channel
+        r_offset_img = ImageChops.offset(r, r_offset, 0)
+        g_offset_img = ImageChops.offset(g, 0, g_offset)
+        b_offset_img = ImageChops.offset(b, 0, b_offset)
+
+        # merge the channels with the offsets
+        merged = Image.merge("RGB", (r_offset_img, g_offset_img, b_offset_img))
+
+        # create fade masks for blending
+        fade_mask = create_fade_mask(img.size, fade_radius)
+
+        # merge the blended channels back into an RGB image
+        result = Image.composite(merged, img, fade_mask).convert("RGB")
+
+        return result
+
+class FilmGrainNode:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "image": ("IMAGE",),
+                "density": ("FLOAT", {"default": 0.5, "min": 0.01, "max": 1.0, "step": 0.01}),
+                "intensity": ("FLOAT", {"default": 0.6, "min": 0.01, "max": 1.0, "step": 0.01}),
+                "highlights": ("FLOAT", {"default": 1.0, "min": 0.01, "max": 255.0, "step": 0.01}),
+                "supersample_factor": ("INT", {"default": 4, "min": 1, "max": 8, "step": 1})
+            }
+        }
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "apply_film_grain"
+    CATEGORY = "Minx Merge/Image/Filter"
+
+    def apply_film_grain(self, image, density=0.5, intensity=0.6, highlights=1.0, supersample_factor=4):
+        batch_tensor = []
+
+        for img in image:
+            img_pil = tensor2pil(img)
+            result = self._film_grain_effect(img_pil, density, intensity, highlights, supersample_factor)
+            batch_tensor.append(pil2tensor(result))
+
+        return (torch.cat(batch_tensor, dim=0),)
+
+    def _film_grain_effect(self, img, density=0.1, intensity=1.0, highlights=1.0, supersample_factor=4):
+        """
+        Apply grayscale noise with specified density, intensity, and highlights to a PIL image.
+        """
+        img_gray = img.convert('L')
+        original_size = img.size
+        img_gray = img_gray.resize(
+            ((img.size[0] * supersample_factor), (img.size[1] * supersample_factor)), Image.Resampling.LANCZOS)
+        num_pixels = int(density * img_gray.size[0] * img_gray.size[1])
+
+        noise_pixels = []
+        for i in range(num_pixels):
+            x = random.randint(0, img_gray.size[0]-1)
+            y = random.randint(0, img_gray.size[1]-1)
+            noise_pixels.append((x, y))
+
+        for x, y in noise_pixels:
+            value = random.randint(0, 255)
+            img_gray.putpixel((x, y), value)
+
+        img_noise = img_gray.convert('RGB')
+        img_noise = img_noise.filter(ImageFilter.GaussianBlur(radius=0.125))
+        img_noise = img_noise.resize(original_size, Image.Resampling.LANCZOS)
+        img_noise = img_noise.filter(ImageFilter.EDGE_ENHANCE_MORE)
+        img_final = Image.blend(img, img_noise, intensity)
+        enhancer = ImageEnhance.Brightness(img_final)
+        img_highlights = enhancer.enhance(highlights)
+
+        # Return the final image
+        return img_highlights
+
 # Node class mappings
 NODE_CLASS_MAPPINGS = {
     "MinxMergeNode": MinxMergeNode,
-    "ImageRotateNode": ImageRotateNode
+    "ImageRotateNode": ImageRotateNode,
+    "ChromaticAberrationNode": ChromaticAberrationNode,
+    "FilmGrainNode": FilmGrainNode
 }
 
 # Node display name mappings
 NODE_DISPLAY_NAME_MAPPINGS = {
     "MinxMergeNode": "Minx Merge",
-    "ImageRotateNode": "Image Rotate"
+    "ImageRotateNode": "Image Rotate",
+    "ChromaticAberrationNode": "Chromatic Aberration",
+    "FilmGrainNode": "Film Grain"
 }
