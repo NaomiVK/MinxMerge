@@ -61,6 +61,8 @@ class MinxMergeNode:
                 seed = self.last_seed + 1
             self.last_seed = seed
 
+            np.random.seed(seed)
+            random.seed(seed)
             # Set the seed
             torch.manual_seed(seed)
 
@@ -230,18 +232,6 @@ class ImageRotateNode:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "images": ("IMAGE",),
-                "mode": (["transpose", "internal"],),
-                "rotation": ("INT", {"default": 0, "min": 0, "max": 360, "step": 90}),
-                "sampler": (["nearest", "bilinear", "bicubic"],),
-            },
-        }
-
-    RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("images",)
-    FUNCTION = "image_rotate"
-    CATEGORY = "Minx Merge/Image/Transform"
-
     def image_rotate(self, images, mode, rotation, sampler):
         batch_tensor = []
         for image in images:
@@ -375,12 +365,6 @@ class ChromaticAberrationNode:
         # create fade masks for blending
         fade_mask = create_fade_mask(img.size, fade_radius)
 
-        # merge the blended channels back into an RGB image
-        result = Image.composite(merged, img, fade_mask).convert("RGB")
-
-        return result
-
-class FilmGrainNode:
     def __init__(self):
         pass
 
