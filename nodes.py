@@ -31,7 +31,7 @@ class MinxMergeNode:
                 "openai_model": (get_available_models(LLMService.OPENAI), {"default": "none"}),
                 "anthropic_model": (get_available_models(LLMService.ANTHROPIC), {"default": "none"}),
                 "temperature": ("FLOAT", {"default": 0.7, "min": 0.0, "max": 1.0, "step": 0.1}),
-                "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
+                "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffff}),
                 "debug_mode": ("BOOLEAN", {"default": False}),
                 "instruction": ("STRING", {"default": "", "multiline": True, "forceInput": True}),
                 "example": ("STRING", {"default": "", "multiline": True, "forceInput": True}),
@@ -56,9 +56,14 @@ class MinxMergeNode:
             logger.debug(f"Starting prompt generation with {llm_service} service")
             service = LLMService(llm_service)
 
-            # Handle seed
+            # Handle seed - ensure it stays within ComfyUI's 32-bit range
             if self.last_seed is not None:
-                seed = self.last_seed + 1
+                # Increment seed but wrap around if it exceeds 32-bit limit
+                incremented_seed = self.last_seed + 1
+                if incremented_seed > 0xffffffff:  # 2^32 - 1
+                    seed = 0  # Wrap around to 0
+                else:
+                    seed = incremented_seed
             self.last_seed = seed
 
             np.random.seed(seed)
@@ -232,6 +237,17 @@ class ImageRotateNode:
     def INPUT_TYPES(cls):
         return {
             "required": {
+                "images": ("IMAGE",),
+                "mode": (["internal", "external"], {"default": "internal"}),
+                "rotation": ("INT", {"default": 90, "min": 0, "max": 360, "step": 90}),
+                "sampler": (["nearest", "bicubic", "bilinear"], {"default": "bilinear"}),
+            }
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    FUNCTION = "image_rotate"
+    CATEGORY = "Minx Merge"
+
     def image_rotate(self, images, mode, rotation, sampler):
         batch_tensor = []
         for image in images:
@@ -279,11 +295,11 @@ class ChromaticAberrationNode:
         return {
             "required": {
                 "image": ("IMAGE",),
-                "red_offset": ("INT", {"default": 2, "min": -255, "max": 255, "step": 1}),
-                "green_offset": ("INT", {"default": -1, "min": -255, "max": 255, "step": 1}),
-                "blue_offset": ("INT", {"default": 1, "min": -255, "max": 255, "step": 1}),
+                "red_offset": ("INT", {"default": 2, "min": -50, "max": 50, "step": 1}),
+                "green_offset": ("INT", {"default": 0, "min": -50, "max": 50, "step": 1}),
+                "blue_offset": ("INT", {"default": -2, "min": -50, "max": 50, "step": 1}),
                 "intensity": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0, "step": 0.01}),
-                "fade_radius": ("INT", {"default": 12, "min": 0, "max": 1024, "step": 1}),
+                "fade_radius": ("INT", {"default": 12, "min": 0, "max": 100, "step": 1}),
             },
         }
 
@@ -354,17 +370,26 @@ class ChromaticAberrationNode:
         # split the channels of the image
         r, g, b = img.split()
 
-        # apply the offset to each channel
+        # apply the offset to each channel (chromatic aberration typically offsets red/blue horizontally)
         r_offset_img = ImageChops.offset(r, r_offset, 0)
-        g_offset_img = ImageChops.offset(g, 0, g_offset)
-        b_offset_img = ImageChops.offset(b, 0, b_offset)
+        g_offset_img = ImageChops.offset(g, green_offset, 0)  
+        b_offset_img = ImageChops.offset(b, b_offset, 0)
 
         # merge the channels with the offsets
         merged = Image.merge("RGB", (r_offset_img, g_offset_img, b_offset_img))
 
         # create fade masks for blending
         fade_mask = create_fade_mask(img.size, fade_radius)
+        
+        # blend the original image with the chromatic aberration effect using the fade mask
+        result = Image.composite(merged, img, fade_mask)
+        
+        # apply intensity blending
+        final_result = Image.blend(img, result, intensity)
+        
+        return final_result
 
+class FilmGrainNode:
     def __init__(self):
         pass
 
@@ -376,27 +401,32 @@ class ChromaticAberrationNode:
                 "density": ("FLOAT", {"default": 0.5, "min": 0.01, "max": 1.0, "step": 0.01}),
                 "intensity": ("FLOAT", {"default": 0.6, "min": 0.01, "max": 1.0, "step": 0.01}),
                 "highlights": ("FLOAT", {"default": 1.0, "min": 0.01, "max": 255.0, "step": 0.01}),
-                "supersample_factor": ("INT", {"default": 4, "min": 1, "max": 8, "step": 1})
+                "supersample_factor": ("INT", {"default": 4, "min": 1, "max": 8, "step": 1}),
+                "device": (["AUTO", "CPU", "GPU"], {"default": "AUTO"})
             }
         }
     RETURN_TYPES = ("IMAGE",)
     FUNCTION = "apply_film_grain"
     CATEGORY = "Minx Merge/Image/Filter"
 
-    def apply_film_grain(self, image, density=0.5, intensity=0.6, highlights=1.0, supersample_factor=4):
+    def apply_film_grain(self, image, density=0.5, intensity=0.6, highlights=1.0, supersample_factor=4, device="AUTO"):
         batch_tensor = []
 
         for img in image:
             img_pil = tensor2pil(img)
-            result = self._film_grain_effect(img_pil, density, intensity, highlights, supersample_factor)
+            result = self._film_grain_effect(img_pil, density, intensity, highlights, supersample_factor, device)
             batch_tensor.append(pil2tensor(result))
 
         return (torch.cat(batch_tensor, dim=0),)
 
-    def _film_grain_effect(self, img, density=0.1, intensity=1.0, highlights=1.0, supersample_factor=4):
+    def _film_grain_effect(self, img, density=0.1, intensity=1.0, highlights=1.0, supersample_factor=4, device="AUTO"):
         """
         Apply grayscale noise with specified density, intensity, and highlights to a PIL image.
+        Device parameter is available for future GPU-accelerated implementations.
         """
+        # Current implementation uses PIL/CPU regardless of device setting
+        # This parameter is prepared for future GPU acceleration
+        
         img_gray = img.convert('L')
         original_size = img.size
         img_gray = img_gray.resize(
@@ -424,12 +454,16 @@ class ChromaticAberrationNode:
         # Return the final image
         return img_highlights
 
+# Import LaMa node
+from .lama_remove_object import LamaRemoveObject
+
 # Node class mappings
 NODE_CLASS_MAPPINGS = {
     "MinxMergeNode": MinxMergeNode,
     "ImageRotateNode": ImageRotateNode,
     "ChromaticAberrationNode": ChromaticAberrationNode,
-    "FilmGrainNode": FilmGrainNode
+    "FilmGrainNode": FilmGrainNode,
+    "LamaRemoveObject": LamaRemoveObject
 }
 
 # Node display name mappings
@@ -437,5 +471,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "MinxMergeNode": "Minx Merge",
     "ImageRotateNode": "Image Rotate",
     "ChromaticAberrationNode": "Chromatic Aberration",
-    "FilmGrainNode": "Film Grain"
+    "FilmGrainNode": "Film Grain",
+    "LamaRemoveObject": "LaMa Remove Object"
 }

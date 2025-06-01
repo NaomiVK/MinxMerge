@@ -1,17 +1,25 @@
 # Comfy Minx Merge
 
-Comfy Minx Merge is a custom node pack for ComfyUI that integrates multiple Language Model (LLM) services to process images and generate text, along with utility nodes for image manipulation.
+Comfy Minx Merge is a comprehensive custom node pack for ComfyUI that provides advanced AI-powered image analysis, creative prompt generation, and high-quality image effects processing.
 
 ## Features
 
-- Vision-enabled LLM integration with OpenAI and Anthropic services
-- Process images with multimodal AI models to generate text output
+### AI & LLM Integration
+- Vision-enabled LLM integration with OpenAI and Anthropic services  
+- Multimodal AI models for intelligent image analysis and text generation
 - Customizable instructions, examples, and prompts
-- Flexible input options with adjustable temperature and max tokens
-- Exponential backoff retry mechanism for API failures
-- Image Rotate node: Rotate images with various methods and sampling options
-- Chromatic Aberration node: Create RGB channel offset effects
-- Film Grain node: Add realistic film grain to images
+- Flexible temperature and token controls with exponential backoff retry mechanism
+
+### Image Processing & Effects
+- Professional film grain effects with device selection (CPU/GPU)
+- Chromatic aberration simulation for vintage/artistic looks
+- Advanced object removal using LaMa (Large Mask Inpainting) model
+- Flexible image rotation with multiple resampling methods
+
+### Workflow Enhancement
+- Seed management for reproducible results
+- Professional image effects processing
+- Device selection for optimal performance
 
 ## Installation
 
@@ -90,7 +98,18 @@ If you encounter any issues related to API compatibility, please ensure you have
    - `intensity`: Controls the strength of the grain effect (0.01-1.0)
    - `highlights`: Adjusts the brightness of the final image (0.01-255.0)
    - `supersample_factor`: Controls the resolution at which the grain is generated (higher values = finer grain)
+   - `device`: Choose execution device (AUTO, CPU, or GPU) - currently uses CPU regardless of setting
 4. The output is the image with film grain applied
+
+### LaMa Remove Object Node
+
+1. Find the "LaMa Remove Object" node in the "MinxMerge/Image" category.
+2. Connect an image and a mask input to the node.
+3. Optional settings:
+   - `device_mode`: Choose between AUTO (smart memory management), Prefer GPU, or CPU
+4. The node automatically downloads the LaMa model on first use
+5. The output is the image with masked objects intelligently removed
+
 
 ## Customization
 
@@ -134,13 +153,24 @@ Select from vision-capable models like:
 
 Each LLM service has its own model selection dropdown. These dropdowns are always visible, but you should only select a model for the service you're currently using. Select "none" for the service you're not using.
 
+## Node Catalog
+
+### Core AI Nodes
+- **Minx Merge**: Vision-enabled LLM integration for image analysis
+
+### Image Processing Nodes
+- **Film Grain**: Professional film grain simulation with device selection
+- **Chromatic Aberration**: RGB channel offset effects for vintage/artistic looks
+- **LaMa Remove Object**: Advanced AI-powered object removal
+- **Image Rotate**: Flexible image rotation with multiple resampling methods
+
 ## Image Filter Effects
 
 The image filter nodes provide several ways to add interesting visual effects to your images:
 
 ### Chromatic Aberration Effects
 - Create subtle RGB channel shifts for a vintage camera look
-- Simulate lens distortion and color fringing
+- Simulate lens distortion and color fringing  
 - Create sci-fi glitch aesthetics
 - Add psychedelic color effects
 - Highlight edges with colorful halos
@@ -152,6 +182,12 @@ The image filter nodes provide several ways to add interesting visual effects to
 - Simulate high-ISO photography
 - Create artistic texture effects
 
+### Object Removal
+- Intelligent content-aware inpainting
+- Seamless object removal with context preservation
+- Support for complex backgrounds and textures
+- Automatic model downloading and management
+
 ## Troubleshooting
 
 If you encounter any issues with API keys or model selection, ensure that:
@@ -160,15 +196,6 @@ If you encounter any issues with API keys or model selection, ensure that:
 3. The selected model is available for your account/subscription level.
 4. You've selected a model (not "none") for the LLM service you're using.
 
-## Testing
-
-To verify the functionality of the Comfy Minx Merge node pack, you can run the included test script:
-
-```
-python comfy_minx_merge/test_minx_merge.py
-```
-
-This script performs basic tests on the node's input types and model fetching capabilities.
 
 ## Contributing
 
