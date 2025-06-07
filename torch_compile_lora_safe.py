@@ -65,7 +65,17 @@ class _LazyCompiled(nn.Module):
             # Only one thread actually compiles
             with self._compile_lock:
                 if self._compiled is None:
-                    self._compiled = torch.compile(self._orig, **self._compile_kw)
+                    try:
+                        self._compiled = torch.compile(self._orig, **self._compile_kw)
+                    except Exception as e:
+                        print(f"WARNING: torch.compile failed ({type(e).__name__}: {e})")
+                        print("Falling back to uncompiled model. This is usually due to:")
+                        print("- PyTorch version compatibility issues")
+                        print("- Unsupported model operations")
+                        print("- Complex dynamic shapes")
+                        print("Try using a different backend or updating PyTorch.")
+                        # Fallback to original model
+                        self._compiled = self._orig
         return self._compiled(*args, **kwargs)
 
 

@@ -219,11 +219,38 @@ The image filter nodes provide several ways to add interesting visual effects to
 
 ## Troubleshooting
 
+### API Issues
 If you encounter any issues with API keys or model selection, ensure that:
 1. Your API keys are correctly set as environment variables.
 2. You have an active subscription or access to the selected LLM service.
 3. The selected model is available for your account/subscription level.
 4. You've selected a model (not "none") for the LLM service you're using.
+
+### Torch Compile Issues
+If you encounter errors with the TorchCompileModel_LoRASafe node:
+
+**Common Error**: `AttributeError: 'SymInt' object has no attribute 'size'`
+- This is a known PyTorch bug with the `inductor` backend
+- **Solution**: Try switching to a different backend:
+  - Use `cudagraphs` if you have a CUDA GPU with compute capability 7.0+
+  - Use CPU-only workflows temporarily
+  - Update to the latest PyTorch version
+
+**Backend Compatibility**:
+- `inductor`: Most common backend, but has compatibility issues with some models
+- `cudagraphs`: Best for CUDA GPUs, requires compute capability 7.0+
+- `nvfuser`: Legacy backend, requires CUDA
+
+**If compilation fails**:
+1. The node will automatically fall back to the uncompiled model
+2. Check the console for warning messages
+3. Try different compilation settings (disable `fullgraph`, enable `dynamic`)
+4. Consider skipping torch compilation if your workflow is already fast enough
+
+**Requirements**:
+- PyTorch 2.0 or higher
+- Compatible GPU for `cudagraphs` and `nvfuser` backends
+- Some model architectures may not be compatible with all backends
 
 
 ## Contributing

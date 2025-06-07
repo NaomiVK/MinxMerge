@@ -4,3 +4,6 @@ groq>=0.3.0
 numpy>=1.26.0
 Pillow>=10.0.0
 torch>=2.0.0
+# Note: torch.compile requires PyTorch 2.0+ but may have compatibility issues
+# with certain model architectures and versions. If you encounter compilation
+# errors, try switching to a different backend or disabling compilation.
