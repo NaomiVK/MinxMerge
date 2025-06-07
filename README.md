@@ -16,11 +16,6 @@ Comfy Minx Merge is a comprehensive custom node pack for ComfyUI that provides a
 - Advanced object removal using LaMa (Large Mask Inpainting) model
 - Flexible image rotation with multiple resampling methods
 
-### Model Optimization
-- LoRA-safe torch compilation for improved inference performance
-- Multiple backend support (inductor, cudagraphs, nvfuser)
-- Lazy compilation with thread safety
-- Transformer-only compilation options
 
 ### Workflow Enhancement
 - Seed management for reproducible results
@@ -116,18 +111,6 @@ If you encounter any issues related to API compatibility, please ensure you have
 4. The node automatically downloads the LaMa model on first use
 5. The output is the image with masked objects intelligently removed
 
-### Torch Compile LoRA Safe Node
-
-1. Find the "Torch Compile LoRA Safe" node in the "Minx Merge/model/optimisation 🛠️" category.
-2. Connect a MODEL input to the node.
-3. Configure compilation settings:
-   - `backend`: Choose between inductor, cudagraphs, or nvfuser
-   - `mode`: Select default, reduce-overhead, or max-autotune
-   - `fullgraph`: Enable for full graph compilation (more aggressive optimization)
-   - `dynamic`: Enable dynamic shapes support
-   - `compile_transformer_only`: Compile only transformer blocks instead of the entire UNet
-4. The output is an optimized MODEL with improved inference performance
-5. First inference will trigger compilation (expect initial delay)
 
 
 ## Customization
@@ -183,8 +166,6 @@ Each LLM service has its own model selection dropdown. These dropdowns are alway
 - **LaMa Remove Object**: Advanced AI-powered object removal
 - **Image Rotate**: Flexible image rotation with multiple resampling methods
 
-### Model Optimization Nodes
-- **Torch Compile LoRA Safe**: LoRA-compatible torch compilation for performance optimization
 
 ## Image Filter Effects
 
@@ -210,12 +191,6 @@ The image filter nodes provide several ways to add interesting visual effects to
 - Support for complex backgrounds and textures
 - Automatic model downloading and management
 
-### Model Optimization
-- LoRA-safe compilation for stable training workflows
-- Performance improvements for inference speed
-- Memory optimization through lazy compilation
-- Support for various PyTorch backends
-- Thread-safe compilation for concurrent workflows
 
 ## Troubleshooting
 
@@ -226,31 +201,6 @@ If you encounter any issues with API keys or model selection, ensure that:
 3. The selected model is available for your account/subscription level.
 4. You've selected a model (not "none") for the LLM service you're using.
 
-### Torch Compile Issues
-If you encounter errors with the TorchCompileModel_LoRASafe node:
-
-**Common Error**: `AttributeError: 'SymInt' object has no attribute 'size'`
-- This is a known PyTorch bug with the `inductor` backend
-- **Solution**: Try switching to a different backend:
-  - Use `cudagraphs` if you have a CUDA GPU with compute capability 7.0+
-  - Use CPU-only workflows temporarily
-  - Update to the latest PyTorch version
-
-**Backend Compatibility**:
-- `inductor`: Most common backend, but has compatibility issues with some models
-- `cudagraphs`: Best for CUDA GPUs, requires compute capability 7.0+
-- `nvfuser`: Legacy backend, requires CUDA
-
-**If compilation fails**:
-1. The node will automatically fall back to the uncompiled model
-2. Check the console for warning messages
-3. Try different compilation settings (disable `fullgraph`, enable `dynamic`)
-4. Consider skipping torch compilation if your workflow is already fast enough
-
-**Requirements**:
-- PyTorch 2.0 or higher
-- Compatible GPU for `cudagraphs` and `nvfuser` backends
-- Some model architectures may not be compatible with all backends
 
 
 ## Contributing

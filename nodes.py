@@ -457,8 +457,6 @@ class FilmGrainNode:
 # Import LaMa node
 from .lama_remove_object import LamaRemoveObject
 
-# Import TorchCompile node
-from .torch_compile_lora_safe import TorchCompileModel_LoRASafe
 
 # Node class mappings
 NODE_CLASS_MAPPINGS = {
@@ -466,8 +464,7 @@ NODE_CLASS_MAPPINGS = {
     "ImageRotateNode": ImageRotateNode,
     "ChromaticAberrationNode": ChromaticAberrationNode,
     "FilmGrainNode": FilmGrainNode,
-    "LamaRemoveObject": LamaRemoveObject,
-    "TorchCompileModel_LoRASafe": TorchCompileModel_LoRASafe
+    "LamaRemoveObject": LamaRemoveObject
 }
 
 # Node display name mappings
@@ -476,6 +473,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "ImageRotateNode": "Image Rotate",
     "ChromaticAberrationNode": "Chromatic Aberration",
     "FilmGrainNode": "Film Grain",
-    "LamaRemoveObject": "LaMa Remove Object",
-    "TorchCompileModel_LoRASafe": "Torch Compile LoRA Safe"
+    "LamaRemoveObject": "LaMa Remove Object"
 }
